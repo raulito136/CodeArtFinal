@@ -1,0 +1,8 @@
+node_modules/
+.next/
+__mocks__/
+cypress/
+nextjs-app/
+queries/
+*.log
+*.tmp
