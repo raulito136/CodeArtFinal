@@ -3,11 +3,28 @@
 namespace App\Entity;
 
 use ApiPlatform\Metadata\ApiResource;
+use ApiPlatform\Metadata\GraphQl\Mutation;
+use ApiPlatform\Metadata\GraphQl\Query;
 use App\Repository\ProductRepository;
+use App\Resolver\CreateProductResolver;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity(repositoryClass: ProductRepository::class)]
 #[ApiResource]
+#[ApiResource(
+    graphQlOperations: [
+        new Query(),
+        new Query(
+            name: 'findById',
+            resolver: ProductRepository::class,
+            read: false
+        ),
+        new Mutation(
+            name: 'create',
+            resolver: CreateProductResolver::class
+        )
+    ]
+)]
 class Product
 {
     #[ORM\Id]
