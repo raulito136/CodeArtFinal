@@ -7,6 +7,7 @@ use ApiPlatform\Metadata\GraphQl\Mutation;
 use ApiPlatform\Metadata\GraphQl\Query;
 use App\Repository\ProductRepository;
 use App\Resolver\CreateProductResolver;
+use App\Resolver\ProductResolver;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity(repositoryClass: ProductRepository::class)]
@@ -16,7 +17,7 @@ use Doctrine\ORM\Mapping as ORM;
         new Query(),
         new Query(
             name: 'findById',
-            resolver: ProductRepository::class,
+            resolver: ProductResolver::class,
             read: false
         ),
         new Mutation(
@@ -28,7 +29,6 @@ use Doctrine\ORM\Mapping as ORM;
 class Product
 {
     #[ORM\Id]
-    #[ORM\GeneratedValue]
     #[ORM\Column]
     private ?string $id = null;
 

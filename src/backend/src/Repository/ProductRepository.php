@@ -5,42 +5,77 @@ namespace App\Repository;
 use App\Entity\Product;
 use AsyncAws\DynamoDb\DynamoDbClient;
 use AsyncAws\DynamoDb\Input\DeleteItemInput;
+use AsyncAws\DynamoDb\Input\GetItemInput;
 use AsyncAws\DynamoDb\Input\PutItemInput;
-use AsyncAws\DynamoDb\Input\QueryInput;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
+use Monolog\Level;
+use Psr\Log\LoggerInterface;
 
 /**
  * @extends ServiceEntityRepository<Product>
  */
 class ProductRepository extends ServiceEntityRepository
 {
-    private DynamoDbClient $dynamoDbClient;
-
-    public function __construct(ManagerRegistry $registry, DynamoDbClient $dynamoDbClient)
-    {
+    public function __construct(
+        private ManagerRegistry $registry,
+        private DynamoDbClient $dynamoDbClient,
+        private LoggerInterface $logger,
+    ) {
         parent::__construct($registry, Product::class);
-        $this->dynamoDbClient = $dynamoDbClient;
+    }
+
+    public function ormSave(Product $product): void
+    {
+        $entityManager = $this->getEntityManager();
+        $entityManager->persist($product);
+        $entityManager->flush();
+    }
+
+    public function ormDelete(string $id): void
+    {
+        $product = $this->find($id);
+
+        if (!$product)
+            return;
+
+        $entityManager = $this->getEntityManager();
+        $entityManager->remove($product);
+        $entityManager->flush();
     }
 
     public function findById($id): ?Product
     {
-        $input = new QueryInput([
-            'TableName' => 'products',
-            'KeyConditionExpression' => 'id = :id',
-            'ExpressionAttributeValues' => [
-                ':id' => ['S' => $id],
-            ],
+
+        $this->logger->log(Level::Info, 'findById', [
+            'id' => $id,
         ]);
 
-        $result = $this->dynamoDbClient->query($input);
+        $result = $this->dynamoDbClient->getItem(new GetItemInput([
+            'TableName' => 'products',
+            'ConsistentRead' => true,
+            'Key' => [
+                'id' => ['S' => $id],
+            ],
+        ]));
 
-        if (!$result->getItems()) {
+
+        $item = $result->getItem();
+        if (!$item) {
             return null;
         }
 
-        $item = $result->getItems()[0];
-        return new Product($item['id']['S'], $item['name']['S'], (float) $item['price']['N']);
+        $this->logger->log(Level::Info, 'Result', [
+            'result' => $result,
+            'item' => $item,
+        ]);
+
+        $product = new Product();
+        $product->setId($item['id']->getS());
+        $product->setName($item['name']->getS());
+        $product->setDescription($item['description']->getS());
+        $product->setPrice((float) $item['price']->getN());
+        return $product;
     }
 
     public function save(Product $product): string
@@ -50,11 +85,17 @@ class ProductRepository extends ServiceEntityRepository
             'Item' => [
                 'id' => ['S' => $product->getId()],
                 'name' => ['S' => $product->getName()],
+                'description' => ['S' => $product->getDescription()],
                 'price' => ['N' => (string) $product->getPrice()],
             ],
         ]);
 
+        // esto lo vuelca en dynamo
         $this->dynamoDbClient->putItem($input);
+
+        // y esto en sqlite
+        $this->ormSave($product);
+
         return $product->getId();
     }
 
@@ -67,7 +108,11 @@ class ProductRepository extends ServiceEntityRepository
             ],
         ]);
 
+        // de dynamodb
         $this->dynamoDbClient->deleteItem($input);
+
+        // y de sqlite
+        $this->ormDelete($id);
     }
 
     public function createTable(): void
@@ -98,6 +143,19 @@ class ProductRepository extends ServiceEntityRepository
 
         foreach ($items as $item) {
             $this->delete($item['id']->getS());
+            $this->ormDelete($item['id']->getS());
         }
+    }
+
+    public function deleteById(string $id): void
+    {
+        $this->delete($id);
+    }
+
+    public function listAll(): array
+    {
+        $items = $this->dynamoDbClient->scan(['TableName' => 'products'])->getItems();
+
+        return $items;
     }
 }
